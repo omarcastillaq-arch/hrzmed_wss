@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node index.js",
     "dev": "AUTH_ENABLED=false node index.js",
-    "test": "node --test tests/*.test.js",
+    "test": "node --test --test-force-exit tests/*.test.js",
+    "test:unit": "node --test --test-force-exit tests/auth.test.js tests/ecgValidator.test.js tests/signalCompressor.test.js tests/persistence.test.js",
+    "test:integration": "node --test --test-force-exit tests/integration.test.js",
     "generate-token": "node scripts/generate-token.js"
   },
   "repository": {
