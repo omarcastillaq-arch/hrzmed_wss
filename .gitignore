@@ -2,3 +2,6 @@ node_modules/
 .env
 *.log
 /var/log/
+coverage/
+reports/
+*.lcov

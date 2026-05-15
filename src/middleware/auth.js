@@ -1,11 +1,11 @@
 /**
  * @module auth
  * @description JWT authentication middleware for WebSocket connections.
- * 
+ *
  * Clients must provide a valid JWT token either:
  *   1. As a query parameter: ws://host:port?token=<JWT>
  *   2. In the Sec-WebSocket-Protocol header (for browser clients)
- * 
+ *
  * Tokens are verified against JWT_SECRET from environment variables.
  * Failed authentication attempts are logged as security events.
  */

@@ -9,7 +9,14 @@
     "test": "node --test --test-force-exit tests/*.test.js",
     "test:unit": "node --test --test-force-exit tests/auth.test.js tests/ecgValidator.test.js tests/signalCompressor.test.js tests/persistence.test.js",
     "test:integration": "node --test --test-force-exit tests/integration.test.js",
-    "generate-token": "node scripts/generate-token.js"
+    "test:coverage": "c8 --reporter=text --reporter=lcov --reporter=json-summary --report-dir=coverage node --test --test-force-exit tests/*.test.js",
+    "test:coverage:unit": "c8 --reporter=text --reporter=lcov --report-dir=coverage node --test --test-force-exit tests/auth.test.js tests/ecgValidator.test.js tests/signalCompressor.test.js tests/persistence.test.js",
+    "lint": "eslint . --ext .js",
+    "lint:fix": "eslint . --ext .js --fix",
+    "lint:report": "mkdir -p reports && eslint . --ext .js --format json --output-file reports/eslint-report.json || true",
+    "generate-token": "node scripts/generate-token.js",
+    "ci": "npm run lint && npm test",
+    "precommit": "npm run lint && npm run test:unit"
   },
   "repository": {
     "type": "git",
@@ -30,6 +37,8 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "c8": "^8.0.1",
+    "eslint": "^8.57.1",
     "mongodb-memory-server": "^11.1.0"
   }
 }

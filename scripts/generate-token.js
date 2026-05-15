@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * JWT Token Generator for Horizon Medical WSS
- * 
+ *
  * Usage:
  *   JWT_SECRET=<secret> node scripts/generate-token.js --role device --deviceId holter-001
  *   JWT_SECRET=<secret> node scripts/generate-token.js --role monitor --userId admin-001
@@ -41,8 +41,8 @@ const payload = {
   patientId: args.patientId || null,
   userId: args.userId || null,
   permissions: role === 'admin' ? ['send_ecg', 'send_status', 'monitor', 'admin'] :
-               role === 'monitor' ? ['monitor'] :
-               ['send_ecg', 'send_status'],
+    role === 'monitor' ? ['monitor'] :
+      ['send_ecg', 'send_status'],
 };
 
 const expiresIn = args.expires || '24h';

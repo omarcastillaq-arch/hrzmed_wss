@@ -1,7 +1,7 @@
 /**
  * @module ecgValidator
  * @description Validates incoming ECG/EKG medical data for the Horizon Medical platform.
- * 
+ *
  * Validates:
  *   - Message structure and required fields
  *   - ECG channel data format (8 channels from ADS1298 AFE)
@@ -9,7 +9,7 @@
  *   - Sampling rate consistency
  *   - Timestamp validity
  *   - Patient/device identifier format
- * 
+ *
  * The ADS1298 AFE produces 24-bit signed samples across 8 channels.
  * BLE characteristic UUIDs: 0x8171-0x8178 map to channels 1-8.
  */
@@ -133,7 +133,7 @@ function validateMessageStructure(messageStr) {
 
 /**
  * Validate ECG data payload from a Holter device.
- * 
+ *
  * Expected format:
  * {
  *   type: "ecg_data",
@@ -143,7 +143,7 @@ function validateMessageStructure(messageStr) {
  *   samples: [<int24>, <int24>, ...],
  *   sequenceNumber: <number> (optional)
  * }
- * 
+ *
  * @param {object} data - Parsed ECG data object
  * @returns {ValidationResult}
  */

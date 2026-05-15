@@ -1,15 +1,15 @@
 /**
  * Horizon Medical WebSocket Server (hrzmed_wss)
- * 
+ *
  * Secure WebSocket server for real-time ECG/EKG data from IoT Holter devices.
- * 
+ *
  * Security features:
  *   - JWT authentication on WebSocket connections
  *   - Medical data validation (24-bit ADC range, channel IDs, format)
  *   - Rate limiting per IP and per connection
  *   - Structured security logging
  *   - Environment-based configuration (no hardcoded secrets)
- * 
+ *
  * @see SECURITY.md for full security documentation
  */
 

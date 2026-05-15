@@ -1,11 +1,11 @@
 /**
  * @module ECGSignal
  * @description Mongoose schema for individual ECG signal data chunks.
- * 
+ *
  * Each document stores a batch of samples for a single channel within a session.
  * Supports compressed storage via delta encoding + run-length encoding to reduce
  * the storage footprint of 24-bit ADC data by 40-70%.
- * 
+ *
  * Storage strategy:
  *   - Raw samples are stored as-is when compression is disabled
  *   - When compressed, samples are delta-encoded then run-length encoded

@@ -1,21 +1,21 @@
 /**
  * @module signalCompressor
  * @description Compression utilities for ECG signal data.
- * 
+ *
  * Implements a two-stage compression pipeline optimized for 24-bit ADC data:
- * 
+ *
  *   1. **Delta Encoding**: Stores differences between consecutive samples.
  *      ECG signals are quasi-periodic, so deltas are small and cluster near zero.
  *      This reduces the effective bit-width of most values.
- * 
+ *
  *   2. **Run-Length Encoding (RLE)**: Collapses consecutive identical deltas
  *      into (value, count) pairs. Common during flat-line segments or when
  *      the ADC reads the same value repeatedly.
- * 
+ *
  * The compressed representation is serialized to a compact binary Buffer:
  *   - Header: 4 bytes (uint32 = number of RLE pairs)
  *   - Each pair: 4 bytes (int32 delta value) + 2 bytes (uint16 run count)
- * 
+ *
  * Typical compression ratios for ECG data: 1.5x to 4x depending on signal activity.
  */
 

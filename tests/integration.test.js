@@ -375,7 +375,7 @@ describe('Integration Tests – Horizon Medical ECG Platform', () => {
     it('should parse 24-bit signed integers correctly (firmware byte conversion)', () => {
       // Simulates firmware: 3-byte big-endian → signed int, then negated
       function parseFirmwareBytes(b0, b1, b2) {
-        let val = (b0 << 24 | b1 << 16 | b2 << 8) >> 8;
+        const val = (b0 << 24 | b1 << 16 | b2 << 8) >> 8;
         return -val;
       }
       // Positive value: 0x001234 = 4660 → negated = -4660

@@ -1,7 +1,7 @@
 /**
  * @module Patient
  * @description Mongoose schema for Patient records in the Horizon Medical platform.
- * 
+ *
  * Stores demographic and identification data for patients using IoT Holter devices.
  * Designed for regulatory compliance (HIPAA-aware field handling).
  */

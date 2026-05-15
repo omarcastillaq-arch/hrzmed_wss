@@ -1,7 +1,7 @@
 /**
  * @module ECGSession
  * @description Mongoose schema for ECG recording sessions.
- * 
+ *
  * An ECGSession represents a continuous recording period from a single device,
  * optionally linked to a patient. It aggregates metadata about the recording
  * while individual signal chunks are stored in ECGSignal documents.

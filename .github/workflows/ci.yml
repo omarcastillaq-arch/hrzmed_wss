@@ -1,0 +1,167 @@
+# ==============================================================================
+# Horizon Medical WSS - Continuous Integration Pipeline
+# ==============================================================================
+# Runs on every push/PR to main and develop branches.
+# Steps: Lint → Unit Tests → Integration Tests → Coverage Report
+# ==============================================================================
+
+name: CI - Tests & Linting
+
+on:
+  push:
+    branches: [main, develop, feature/*]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  NODE_ENV: test
+  JWT_SECRET: ci-test-secret-key-for-automated-testing
+  JWT_ALGORITHM: HS256
+  AUTH_ENABLED: 'false'
+  LOG_LEVEL: error
+
+jobs:
+  # ============================================================================
+  # Job 1: Linting - Code quality checks
+  # ============================================================================
+  lint:
+    name: 🔍 ESLint Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🔍 Run ESLint
+        run: npm run lint
+
+      - name: 📊 Run ESLint with report
+        if: always()
+        run: npm run lint:report || true
+
+      - name: 📤 Upload ESLint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eslint-report
+          path: reports/eslint-report.json
+          retention-days: 30
+
+  # ============================================================================
+  # Job 2: Unit Tests
+  # ============================================================================
+  unit-tests:
+    name: 🧪 Unit Tests
+    runs-on: ubuntu-latest
+    needs: lint
+
+    strategy:
+      matrix:
+        node-version: ['18', '20', '22']
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🧪 Run unit tests
+        run: npm run test:unit
+
+  # ============================================================================
+  # Job 3: Integration Tests (requires MongoDB)
+  # ============================================================================
+  integration-tests:
+    name: 🔗 Integration Tests
+    runs-on: ubuntu-latest
+    needs: lint
+
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        env:
+          MONGO_INITDB_ROOT_USERNAME: testuser
+          MONGO_INITDB_ROOT_PASSWORD: testpass
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ping:1})' --quiet"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🔗 Run integration tests
+        env:
+          MONGO_URI: mongodb://testuser:testpass@localhost:27017/hrzmed_test?authSource=admin
+          DBNAME: hrzmed_test
+        run: npm run test:integration
+
+  # ============================================================================
+  # Job 4: Coverage Report
+  # ============================================================================
+  coverage:
+    name: 📊 Test Coverage
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests]
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 📊 Run tests with coverage
+        run: npm run test:coverage
+
+      - name: 📤 Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 30
+
+      - name: 📋 Coverage summary
+        if: always()
+        run: |
+          echo "## 📊 Coverage Report" >> $GITHUB_STEP_SUMMARY
+          if [ -f coverage/coverage-summary.txt ]; then
+            cat coverage/coverage-summary.txt >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Coverage report generated. See artifacts for details." >> $GITHUB_STEP_SUMMARY
+          fi

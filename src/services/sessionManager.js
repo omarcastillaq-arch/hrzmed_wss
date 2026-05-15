@@ -1,14 +1,14 @@
 /**
  * @module sessionManager
  * @description Manages ECG recording sessions in real-time.
- * 
+ *
  * Responsibilities:
  *   - Creates sessions when a device starts sending data
  *   - Buffers incoming signal chunks and persists them in batches
  *   - Auto-detects session end via inactivity timeout
  *   - Compresses signal data before storage
  *   - Updates session metadata (duration, sample counts, quality)
- * 
+ *
  * Architecture:
  *   Each active session is tracked in an in-memory Map keyed by
  *   `${connectionId}:${deviceId}`. When ECG data arrives, it's buffered

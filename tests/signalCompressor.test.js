@@ -1,6 +1,6 @@
 /**
  * Tests for signalCompressor module.
- * 
+ *
  * Validates delta encoding, RLE, binary serialization, and the
  * high-level compress/decompress pipeline for ECG signal data.
  */

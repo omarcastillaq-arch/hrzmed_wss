@@ -1,0 +1,62 @@
+{
+  "env": {
+    "node": true,
+    "es2022": true
+  },
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "module"
+  },
+  "extends": ["eslint:recommended"],
+  "rules": {
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    "no-console": "off",
+    "no-constant-condition": "warn",
+    "no-debugger": "error",
+    "no-duplicate-case": "error",
+    "no-empty": ["warn", { "allowEmptyCatch": true }],
+    "no-extra-semi": "error",
+    "no-irregular-whitespace": "error",
+    "no-unreachable": "error",
+    "curly": ["warn", "multi-line"],
+    "default-case": "warn",
+    "eqeqeq": ["warn", "smart"],
+    "no-eval": "error",
+    "no-implied-eval": "error",
+    "no-new-func": "error",
+    "no-return-await": "warn",
+    "no-throw-literal": "error",
+    "prefer-promise-reject-errors": "warn",
+    "no-var": "warn",
+    "prefer-const": "warn",
+    "no-shadow": "warn",
+    "no-use-before-define": ["warn", { "functions": false, "classes": true }],
+    "indent": ["warn", 2, { "SwitchCase": 1 }],
+    "linebreak-style": ["off"],
+    "quotes": ["warn", "single", { "avoidEscape": true, "allowTemplateLiterals": true }],
+    "semi": ["warn", "always"],
+    "comma-dangle": ["warn", "only-multiline"],
+    "no-trailing-spaces": "warn",
+    "no-multiple-empty-lines": ["warn", { "max": 2, "maxEOF": 1 }],
+    "eol-last": ["warn", "always"]
+  },
+  "overrides": [
+    {
+      "files": ["tests/**/*.js"],
+      "env": {
+        "node": true
+      },
+      "rules": {
+        "no-unused-vars": "off",
+        "no-shadow": "off"
+      }
+    }
+  ],
+  "ignorePatterns": [
+    "node_modules/",
+    "coverage/",
+    "reports/",
+    "mongo-init/",
+    "*.min.js"
+  ]
+}

@@ -1,9 +1,9 @@
 /**
  * Example WebSocket client with JWT authentication for Horizon Medical WSS.
- * 
+ *
  * Usage:
  *   JWT_SECRET=<your-secret> node client.js
- * 
+ *
  * Or with a pre-generated token:
  *   node client.js <token>
  */

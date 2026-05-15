@@ -1,10 +1,10 @@
 /**
  * @module ecgRoutes
  * @description REST API routes for querying ECG sessions, signals, and patients.
- * 
+ *
  * All routes are prefixed with /api/v1 and return JSON.
  * Supports pagination, date range filtering, and field selection.
- * 
+ *
  * Routes:
  *   GET /api/v1/sessions          - List sessions with filters
  *   GET /api/v1/sessions/:id      - Get session by sessionId

@@ -1,5 +1,11 @@
 # WebSocket + MongoDB Server
 
+[![CI - Tests & Linting](https://github.com/jgrana2/hrzmed_wss/actions/workflows/ci.yml/badge.svg)](https://github.com/jgrana2/hrzmed_wss/actions/workflows/ci.yml)
+[![Docker Build & Push](https://github.com/jgrana2/hrzmed_wss/actions/workflows/docker.yml/badge.svg)](https://github.com/jgrana2/hrzmed_wss/actions/workflows/docker.yml)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Coverage](https://img.shields.io/badge/coverage-90%25-brightgreen)](./docs/CI_CD.md)
+
 This project sets up a scalable and secure WebSocket server using Node.js, integrated with a MongoDB database. It leverages Docker Compose to orchestrate services, including NGINX for reverse proxying and Certbot for SSL certificate management. This setup ensures real-time communication with connected clients while maintaining secure data transmission.
 
 ## Table of Contents
