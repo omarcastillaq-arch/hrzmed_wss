@@ -51,7 +51,7 @@ function getConnectionOptions() {
 
     // ── Compression ────────────────────────────────────────────────────────
     // Compress data between app and MongoDB (reduces bandwidth)
-    compressors: ['zstd', 'snappy', 'zlib'],
+    compressors: ['zlib'],
 
     // ── Retry Logic ────────────────────────────────────────────────────────
     retryWrites: true,
