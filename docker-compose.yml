@@ -22,7 +22,19 @@ services:
     expose:
       - "3000"
     environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${PORT:-3000}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
       MONGO_URI: ${MONGO_URI}
+      DBNAME: ${DBNAME}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_MAX_AGE: ${JWT_MAX_AGE:-24h}
+      AUTH_ENABLED: ${AUTH_ENABLED:-true}
+      MAX_CONNECTIONS_PER_IP: ${MAX_CONNECTIONS_PER_IP:-10}
+      MAX_MESSAGES_PER_SECOND: ${MAX_MESSAGES_PER_SECOND:-50}
+      MAX_AUTH_FAILURES_PER_IP: ${MAX_AUTH_FAILURES_PER_IP:-5}
+      BAN_DURATION_MS: ${BAN_DURATION_MS:-900000}
     restart: always
 
   mongo:
