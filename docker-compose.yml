@@ -19,6 +19,7 @@ services:
     container_name: node-websocket
     depends_on:
       - mongo
+      - redis
     expose:
       - "3000"
     environment:
@@ -35,6 +36,26 @@ services:
       MAX_MESSAGES_PER_SECOND: ${MAX_MESSAGES_PER_SECOND:-50}
       MAX_AUTH_FAILURES_PER_IP: ${MAX_AUTH_FAILURES_PER_IP:-5}
       BAN_DURATION_MS: ${BAN_DURATION_MS:-900000}
+      # ─── Redis Cache ──────────────────────────────────────────────────────
+      REDIS_ENABLED: ${REDIS_ENABLED:-true}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      # ─── MongoDB Pool ─────────────────────────────────────────────────────
+      MONGO_POOL_SIZE: ${MONGO_POOL_SIZE:-50}
+      MONGO_MIN_POOL_SIZE: ${MONGO_MIN_POOL_SIZE:-10}
+      # ─── WebSocket Compression ────────────────────────────────────────────
+      WS_COMPRESSION_ENABLED: ${WS_COMPRESSION_ENABLED:-true}
+      WS_PING_INTERVAL: ${WS_PING_INTERVAL:-30000}
+      # ─── Cluster Mode ─────────────────────────────────────────────────────
+      CLUSTER_ENABLED: ${CLUSTER_ENABLED:-false}
+      CLUSTER_WORKERS: ${CLUSTER_WORKERS:-0}
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
     restart: always
 
   mongo:
@@ -64,3 +85,4 @@ volumes:
   certbot-var:
   certbot-www:
   mongo-data:
+  redis-data:
