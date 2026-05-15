@@ -26,5 +26,8 @@
     "uuid": "^14.0.0",
     "winston": "^3.19.0",
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "mongodb-memory-server": "^11.1.0"
   }
 }

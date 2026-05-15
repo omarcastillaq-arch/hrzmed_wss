@@ -27,6 +27,8 @@ const logger = require('./src/utils/logger');
 const { authenticateConnection, getClientIP } = require('./src/middleware/auth');
 const { validateMessage } = require('./src/validators/ecgValidator');
 const RateLimiter = require('./src/middleware/rateLimiter');
+const sessionManager = require('./src/services/sessionManager');
+const { handleRequest: handleAPIRequest } = require('./src/routes/ecgRoutes');
 
 // ─── Configuration from Environment ──────────────────────────────────────────
 
@@ -63,7 +65,18 @@ mongoose.connection.on('disconnected', () => {
 
 // ─── HTTP Server + WebSocket Server ──────────────────────────────────────────
 
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
+  // CORS headers for API routes
+  res.setHeader('Access-Control-Allow-Origin', process.env.CORS_ORIGIN || '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
   // Health check endpoint
   if (req.url === '/health' && req.method === 'GET') {
     const mongoReady = mongoose.connection.readyState === 1;
@@ -74,10 +87,18 @@ const server = http.createServer((req, res) => {
       mongo: mongoReady ? 'connected' : 'disconnected',
       uptime: process.uptime(),
       connections: wss.clients.size,
+      activeSessions: sessionManager.getActiveSessions().length,
       timestamp: new Date().toISOString(),
     }));
     return;
   }
+
+  // REST API routes for ECG data persistence
+  if (req.url.startsWith('/api/')) {
+    const handled = await handleAPIRequest(req, res);
+    if (handled) return;
+  }
+
   res.writeHead(404);
   res.end();
 });
@@ -234,9 +255,19 @@ wss.on('connection', (ws, request) => {
 
   // ── Close Handler ────────────────────────────────────────────────────────
 
-  ws.on('close', (code, reason) => {
+  ws.on('close', async (code, reason) => {
     rateLimiter.removeConnection(clientIP);
     rateLimiter.removeMessageTracking(connectionId);
+
+    // Close all ECG recording sessions for this connection
+    try {
+      await sessionManager.closeAllSessions(connectionId);
+    } catch (err) {
+      logger.error('Error closing ECG sessions on disconnect', {
+        connectionId,
+        error: err.message,
+      });
+    }
 
     const sessionDuration = Math.round((Date.now() - ws._connectedAt) / 1000);
 
@@ -265,38 +296,68 @@ wss.on('connection', (ws, request) => {
 
 // ─── Message Type Handlers ───────────────────────────────────────────────────
 
-function handleECGData(ws, data) {
-  // Broadcast validated ECG data to other connected clients (monitoring dashboards)
-  wss.clients.forEach((client) => {
-    if (client !== ws && client.readyState === WebSocket.OPEN) {
-      // Only send to clients that have a role of 'monitor' or 'admin'
-      if (client._user && ['monitor', 'admin', 'anonymous'].includes(client._user.role)) {
-        client.send(JSON.stringify({
-          type: 'ecg_data',
-          deviceId: data.deviceId,
-          channelId: data.channelId,
-          samples: data.samples,
-          timestamp: data.timestamp,
-          sequenceNumber: data.sequenceNumber,
-        }));
+async function handleECGData(ws, data) {
+  // ── Persist to MongoDB via SessionManager ──────────────────────────────
+  try {
+    const result = await sessionManager.recordECGData({
+      connectionId: ws._connectionId,
+      deviceId: data.deviceId,
+      channelId: data.channelId,
+      samples: data.samples,
+      timestamp: data.timestamp,
+      sequenceNumber: data.sequenceNumber,
+      patientId: ws._user?.patientId || null,
+    });
+
+    // Broadcast validated ECG data to other connected clients (monitoring dashboards)
+    wss.clients.forEach((client) => {
+      if (client !== ws && client.readyState === WebSocket.OPEN) {
+        // Only send to clients that have a role of 'monitor' or 'admin'
+        if (client._user && ['monitor', 'admin', 'anonymous'].includes(client._user.role)) {
+          client.send(JSON.stringify({
+            type: 'ecg_data',
+            deviceId: data.deviceId,
+            channelId: data.channelId,
+            samples: data.samples,
+            timestamp: data.timestamp,
+            sequenceNumber: data.sequenceNumber,
+          }));
+        }
       }
-    }
-  });
+    });
 
-  // Acknowledge receipt
-  ws.send(JSON.stringify({
-    type: 'ack',
-    messageType: 'ecg_data',
-    channelId: data.channelId,
-    samplesReceived: data.samples.length,
-    timestamp: Date.now(),
-  }));
+    // Acknowledge receipt with session info
+    ws.send(JSON.stringify({
+      type: 'ack',
+      messageType: 'ecg_data',
+      channelId: data.channelId,
+      samplesReceived: data.samples.length,
+      sessionId: result.sessionId,
+      buffered: result.buffered,
+      timestamp: Date.now(),
+    }));
 
-  logger.debug('ECG data processed', {
-    deviceId: data.deviceId,
-    channelId: data.channelId,
-    sampleCount: data.samples.length,
-  });
+    logger.debug('ECG data processed and persisted', {
+      deviceId: data.deviceId,
+      channelId: data.channelId,
+      sampleCount: data.samples.length,
+      sessionId: result.sessionId,
+    });
+  } catch (err) {
+    logger.error('ECG data persistence error', {
+      deviceId: data.deviceId,
+      error: err.message,
+    });
+    // Still acknowledge receipt even if persistence fails (data was broadcast)
+    ws.send(JSON.stringify({
+      type: 'ack',
+      messageType: 'ecg_data',
+      channelId: data.channelId,
+      samplesReceived: data.samples.length,
+      persistenceError: true,
+      timestamp: Date.now(),
+    }));
+  }
 }
 
 function handleDeviceStatus(ws, data) {
@@ -357,6 +418,10 @@ function gracefulShutdown(signal) {
   server.close(() => {
     logger.info('HTTP server closed');
   });
+
+  // Close all active ECG sessions
+  sessionManager.destroy();
+  logger.info('SessionManager destroyed');
 
   // Close MongoDB connection
   mongoose.connection.close(false).then(() => {
