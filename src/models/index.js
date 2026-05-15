@@ -8,5 +8,7 @@
 const Patient = require('./Patient');
 const ECGSession = require('./ECGSession');
 const ECGSignal = require('./ECGSignal');
+const MedicalUser = require('./MedicalUser');
+const DeviceAssignment = require('./DeviceAssignment');
 
-module.exports = { Patient, ECGSession, ECGSignal };
+module.exports = { Patient, ECGSession, ECGSignal, MedicalUser, DeviceAssignment };

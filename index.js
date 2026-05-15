@@ -48,6 +48,10 @@ const { handleRequest: handleAPIRequest } = require('./src/routes/ecgRoutes');
 const metricsCollector = require('./src/services/metricsCollector');
 const alertManager = require('./src/services/alertManager');
 const { handleRequest: handleMonitoringRequest } = require('./src/routes/monitoringRoutes');
+const handleMedicalUserRoutes = require('./src/routes/medicalUserRoutes');
+const handleDeviceAssignmentRoutes = require('./src/routes/deviceAssignmentRoutes');
+const handleReportRoutes = require('./src/routes/reportRoutes');
+const handleSwaggerRoutes = require('./src/routes/swaggerRoutes');
 
 // ─── Performance Modules (Phase 12) ─────────────────────────────────────────
 const redisCache = require('./src/services/redisCache');
@@ -98,7 +102,7 @@ mongoConfig.connect(MONGO_URI)
 const server = http.createServer(async (req, res) => {
   // CORS headers for API routes
   res.setHeader('Access-Control-Allow-Origin', process.env.CORS_ORIGIN || '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
@@ -111,6 +115,30 @@ const server = http.createServer(async (req, res) => {
   if (req.url.startsWith('/health') || req.url.startsWith('/monitoring') || req.url.startsWith('/api/v1/monitoring')) {
     const handled = handleMonitoringRequest(req, res);
     if (handled) return;
+  }
+
+  // Swagger / API docs
+  if (req.url.startsWith('/api/docs')) {
+    const handled = handleSwaggerRoutes(req, res);
+    if (handled) return;
+  }
+
+  // Medical user routes
+  if (req.url.startsWith('/api/v1/users')) {
+    const handled = await handleMedicalUserRoutes(req, res);
+    if (handled !== null) return;
+  }
+
+  // Device assignment routes
+  if (req.url.startsWith('/api/v1/assignments') || req.url.match(/\/api\/v1\/(devices|patients)\/[^/]+\/assignments/)) {
+    const handled = await handleDeviceAssignmentRoutes(req, res);
+    if (handled !== null) return;
+  }
+
+  // Report and export routes
+  if (req.url.startsWith('/api/v1/reports') || req.url.startsWith('/api/v1/export')) {
+    const handled = await handleReportRoutes(req, res);
+    if (handled !== null) return;
   }
 
   // REST API routes for ECG data persistence
