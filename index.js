@@ -29,6 +29,9 @@ const { validateMessage } = require('./src/validators/ecgValidator');
 const RateLimiter = require('./src/middleware/rateLimiter');
 const sessionManager = require('./src/services/sessionManager');
 const { handleRequest: handleAPIRequest } = require('./src/routes/ecgRoutes');
+const metricsCollector = require('./src/services/metricsCollector');
+const alertManager = require('./src/services/alertManager');
+const { handleRequest: handleMonitoringRequest } = require('./src/routes/monitoringRoutes');
 
 // ─── Configuration from Environment ──────────────────────────────────────────
 
@@ -77,20 +80,10 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Health check endpoint
-  if (req.url === '/health' && req.method === 'GET') {
-    const mongoReady = mongoose.connection.readyState === 1;
-    const status = mongoReady ? 200 : 503;
-    res.writeHead(status, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
-      status: mongoReady ? 'healthy' : 'degraded',
-      mongo: mongoReady ? 'connected' : 'disconnected',
-      uptime: process.uptime(),
-      connections: wss.clients.size,
-      activeSessions: sessionManager.getActiveSessions().length,
-      timestamp: new Date().toISOString(),
-    }));
-    return;
+  // Monitoring routes (health checks, metrics, dashboard)
+  if (req.url.startsWith('/health') || req.url.startsWith('/monitoring') || req.url.startsWith('/api/v1/monitoring')) {
+    const handled = handleMonitoringRequest(req, res);
+    if (handled) return;
   }
 
   // REST API routes for ECG data persistence
@@ -113,6 +106,7 @@ server.on('upgrade', (request, socket, head) => {
   // Rate limit: check IP ban
   if (rateLimiter.isBanned(clientIP)) {
     logger.security('CONNECTION_REJECTED_BANNED_IP', { ip: clientIP });
+    metricsCollector.recordRejectedConnection('banned');
     socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
     socket.destroy();
     return;
@@ -121,6 +115,7 @@ server.on('upgrade', (request, socket, head) => {
   // Rate limit: check max connections per IP
   if (!rateLimiter.allowConnection(clientIP)) {
     logger.security('CONNECTION_REJECTED_RATE_LIMIT', { ip: clientIP });
+    metricsCollector.recordRejectedConnection('rate_limit');
     socket.write('HTTP/1.1 429 Too Many Requests\r\n\r\n');
     socket.destroy();
     return;
@@ -132,6 +127,8 @@ server.on('upgrade', (request, socket, head) => {
 
     if (!authResult.authenticated) {
       rateLimiter.recordAuthFailure(clientIP);
+      metricsCollector.recordRejectedConnection('auth');
+      alertManager.recordAuthFailure();
       logger.security('CONNECTION_REJECTED_AUTH', { ip: clientIP, error: authResult.error });
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
@@ -160,6 +157,7 @@ wss.on('connection', (ws, request) => {
 
   // Track connection
   rateLimiter.addConnection(clientIP);
+  metricsCollector.recordConnection(user.role || 'unknown');
   ws._connectionId = connectionId;
   ws._clientIP = clientIP;
   ws._user = user;
@@ -178,7 +176,11 @@ wss.on('connection', (ws, request) => {
   // ── Message Handler ──────────────────────────────────────────────────────
 
   ws.on('message', (rawMessage) => {
+    const msgStartTime = process.hrtime.bigint();
     ws._messageCount++;
+
+    // Track raw message
+    const rawSize = typeof rawMessage === 'string' ? rawMessage.length : rawMessage.byteLength || 0;
 
     // Rate limit: check message rate
     if (!rateLimiter.allowMessage(connectionId)) {
@@ -187,6 +189,7 @@ wss.on('connection', (ws, request) => {
         ip: clientIP,
         userId: user.id,
       });
+      metricsCollector.recordRateLimitedMessage();
       ws.send(JSON.stringify({
         error: 'Rate limit exceeded',
         code: 'RATE_LIMITED',
@@ -204,6 +207,8 @@ wss.on('connection', (ws, request) => {
         userId: user.id,
         errors: validation.errors,
       });
+      metricsCollector.recordError('validation', validation.errors[0] || 'unknown');
+      alertManager.recordError();
       ws.send(JSON.stringify({
         error: 'Invalid data',
         code: 'VALIDATION_ERROR',
@@ -223,6 +228,10 @@ wss.on('connection', (ws, request) => {
 
     const data = validation.sanitized;
 
+    // Record message metrics
+    metricsCollector.recordMessage(data.type, rawSize);
+    metricsCollector.recordProcessedMessage();
+
     // Process validated message by type
     switch (data.type) {
       case 'ecg_data':
@@ -240,6 +249,10 @@ wss.on('connection', (ws, request) => {
       default:
         ws.send(JSON.stringify({ error: 'Unknown message type', code: 'UNKNOWN_TYPE' }));
     }
+
+    // Record processing latency
+    const latencyMs = Number(process.hrtime.bigint() - msgStartTime) / 1e6;
+    metricsCollector.recordLatency(latencyMs);
   });
 
   // ── Error Handler ────────────────────────────────────────────────────────
@@ -251,6 +264,8 @@ wss.on('connection', (ws, request) => {
       userId: user.id,
       error: error.message,
     });
+    metricsCollector.recordError('websocket', error.message);
+    alertManager.recordError();
   });
 
   // ── Close Handler ────────────────────────────────────────────────────────
@@ -258,6 +273,7 @@ wss.on('connection', (ws, request) => {
   ws.on('close', async (code, reason) => {
     rateLimiter.removeConnection(clientIP);
     rateLimiter.removeMessageTracking(connectionId);
+    metricsCollector.recordDisconnection(user.role || 'unknown');
 
     // Close all ECG recording sessions for this connection
     try {
@@ -297,6 +313,15 @@ wss.on('connection', (ws, request) => {
 // ─── Message Type Handlers ───────────────────────────────────────────────────
 
 async function handleECGData(ws, data) {
+  // ── Track ECG packet quality metrics ───────────────────────────────────
+  metricsCollector.recordECGPacket({
+    deviceId: data.deviceId,
+    channelId: data.channelId,
+    sequenceNumber: data.sequenceNumber,
+    sampleCount: data.samples ? data.samples.length : 0,
+    samples: data.samples,
+  });
+
   // ── Persist to MongoDB via SessionManager ──────────────────────────────
   try {
     const result = await sessionManager.recordECGData({
@@ -348,6 +373,8 @@ async function handleECGData(ws, data) {
       deviceId: data.deviceId,
       error: err.message,
     });
+    metricsCollector.recordError('persistence', err.message);
+    alertManager.recordError();
     // Still acknowledge receipt even if persistence fails (data was broadcast)
     ws.send(JSON.stringify({
       type: 'ack',
@@ -390,11 +417,21 @@ function handlePatientInfo(ws, data) {
 // ─── Start Server ────────────────────────────────────────────────────────────
 
 server.listen(PORT, () => {
+  // Start metrics collection
+  metricsCollector.start();
+
+  // Periodic alert evaluation (every 30s)
+  setInterval(() => {
+    const snapshot = metricsCollector.getSnapshot();
+    alertManager.evaluate(snapshot, { mongoState: mongoose.connection.readyState });
+  }, 30000);
+
   logger.info(`Horizon Medical WSS server started`, {
     port: PORT,
     environment: NODE_ENV,
     authEnabled: AUTH_ENABLED,
     mongoUri: MONGO_URI.replace(/\/\/[^@]+@/, '//***:***@'),
+    monitoring: { dashboard: '/monitoring', health: '/health', detailed: '/health/detailed' },
   });
 });
 
@@ -418,6 +455,10 @@ function gracefulShutdown(signal) {
   server.close(() => {
     logger.info('HTTP server closed');
   });
+
+  // Stop metrics collection
+  metricsCollector.stop();
+  logger.info('MetricsCollector stopped');
 
   // Close all active ECG sessions
   sessionManager.destroy();

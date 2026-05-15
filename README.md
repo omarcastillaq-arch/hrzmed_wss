@@ -30,6 +30,12 @@ This project sets up a scalable and secure WebSocket server using Node.js, integ
 - **Scalable Architecture:** Docker Compose orchestrates multiple services for easy scalability and management.
 - **Persistent Storage:** MongoDB data is persisted using Docker volumes.
 - **Automated Restarts:** Services are configured to always restart, ensuring high availability.
+- **Monitoring & Health Checks:** Real-time system monitoring with dashboard, metrics collection, and configurable alerts. See [docs/MONITORING.md](docs/MONITORING.md) for full documentation.
+  - `GET /health` — Simple health check for load balancers
+  - `GET /health/detailed` — Detailed health with all metrics and alerts
+  - `GET /monitoring` — Interactive monitoring dashboard
+  - ECG signal quality tracking (packet loss, SNR estimation)
+  - Configurable alert thresholds for connections, errors, memory, and ECG quality
 
 ## Prerequisites
 

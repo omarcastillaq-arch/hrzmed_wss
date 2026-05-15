@@ -7,7 +7,7 @@
     "start": "node index.js",
     "dev": "AUTH_ENABLED=false node index.js",
     "test": "node --test --test-force-exit tests/*.test.js",
-    "test:unit": "node --test --test-force-exit tests/auth.test.js tests/ecgValidator.test.js tests/signalCompressor.test.js tests/persistence.test.js",
+    "test:unit": "node --test --test-force-exit tests/auth.test.js tests/ecgValidator.test.js tests/signalCompressor.test.js tests/persistence.test.js tests/monitoring.test.js",
     "test:integration": "node --test --test-force-exit tests/integration.test.js",
     "test:coverage": "c8 --reporter=text --reporter=lcov --reporter=json-summary --report-dir=coverage node --test --test-force-exit tests/*.test.js",
     "test:coverage:unit": "c8 --reporter=text --reporter=lcov --report-dir=coverage node --test --test-force-exit tests/auth.test.js tests/ecgValidator.test.js tests/signalCompressor.test.js tests/persistence.test.js",
