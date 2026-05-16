@@ -333,15 +333,16 @@ async function createNotification({ type, severity, title, message, source = {},
     severity = SEVERITY.MEDIUM;
   }
 
-  // Suppression check (avoid duplicate spam)
-  if (suppression.isDuplicate(type, source.deviceId)) {
+  // Suppression check (avoid duplicate spam) - skip for test notifications
+  const isTestNotification = type === 'test_notification' || (metadata && metadata.test === true);
+  if (!isTestNotification && suppression.isDuplicate(type, source.deviceId)) {
     logger.debug('Notification suppressed (duplicate)', { type, deviceId: source.deviceId });
     return null;
   }
 
-  // Rate limit check
+  // Rate limit check - skip for test notifications
   const rateLimitKey = `${type}:${source.deviceId || 'system'}`;
-  if (!rateLimiter.allow(rateLimitKey)) {
+  if (!isTestNotification && !rateLimiter.allow(rateLimitKey)) {
     logger.warn('Notification rate limited', { type, deviceId: source.deviceId });
     // Still save but mark as suppressed
     const suppressed = new Notification({
