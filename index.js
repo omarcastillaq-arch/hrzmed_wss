@@ -52,6 +52,8 @@ const handleMedicalUserRoutes = require('./src/routes/medicalUserRoutes');
 const handleDeviceAssignmentRoutes = require('./src/routes/deviceAssignmentRoutes');
 const handleReportRoutes = require('./src/routes/reportRoutes');
 const handleSwaggerRoutes = require('./src/routes/swaggerRoutes');
+const handleNotificationRoutes = require('./src/routes/notificationRoutes');
+const notificationService = require('./src/services/notification-service');
 
 // ─── Performance Modules (Phase 12) ─────────────────────────────────────────
 const redisCache = require('./src/services/redisCache');
@@ -138,6 +140,12 @@ const server = http.createServer(async (req, res) => {
   // Report and export routes
   if (req.url.startsWith('/api/v1/reports') || req.url.startsWith('/api/v1/export')) {
     const handled = await handleReportRoutes(req, res);
+    if (handled !== null) return;
+  }
+
+  // Notification routes (Phase 16)
+  if (req.url.startsWith('/api/v1/notifications')) {
+    const handled = await handleNotificationRoutes(req, res);
     if (handled !== null) return;
   }
 
@@ -358,6 +366,16 @@ wss.on('connection', (ws, request) => {
 
     const sessionDuration = Math.round((Date.now() - ws._connectedAt) / 1000);
 
+    // ── Phase 16: Device disconnection notification ──
+    if (user.deviceId && user.role === 'device') {
+      notificationService.detectDeviceDisconnection({
+        deviceId: user.deviceId,
+        patientId: user.patientId || null,
+        connectionId,
+        reason: reason ? reason.toString() : `code ${code}`,
+      }).catch(err => logger.error('Disconnect notification error', { error: err.message }));
+    }
+
     logger.info('Client disconnected', {
       connectionId,
       ip: clientIP,
@@ -469,6 +487,25 @@ async function handleDeviceStatus(ws, data) {
   // Associate device with connection for efficient routing
   connectionPool.associateDevice(ws._connectionId, data.deviceId);
 
+  // ── Phase 16: Battery low detection ──
+  if (data.batteryLevel !== undefined && data.batteryLevel < 20) {
+    notificationService.detectBatteryLow({
+      deviceId: data.deviceId,
+      batteryLevel: data.batteryLevel,
+      patientId: ws._user?.patientId || null,
+    }).catch(err => logger.error('Battery notification error', { error: err.message }));
+  }
+
+  // ── Phase 16: Signal quality detection ──
+  if (data.snrDb !== undefined) {
+    notificationService.detectSignalQualityDegraded({
+      deviceId: data.deviceId,
+      patientId: ws._user?.patientId || null,
+      snrDb: data.snrDb,
+      qualityScore: data.qualityScore,
+    }).catch(err => logger.error('Signal quality notification error', { error: err.message }));
+  }
+
   logger.info('Device status update', {
     deviceId: data.deviceId,
     status: data.status,
@@ -505,6 +542,10 @@ server.listen(PORT, () => {
 
   // Start client health monitoring (ping/pong for stale connections)
   healthMonitor.start();
+
+  // Start notification service (Phase 16)
+  notificationService.setWebSocketServer(wss);
+  notificationService.start();
 
   // Periodic alert evaluation (every 30s)
   setInterval(() => {
@@ -551,6 +592,10 @@ function gracefulShutdown(signal) {
   broadcaster.destroy();
   connectionPool.clear();
   logger.info('Performance monitors stopped');
+
+  // Stop notification service (Phase 16)
+  notificationService.stop();
+  logger.info('Notification service stopped');
 
   // Stop metrics collection
   metricsCollector.stop();
