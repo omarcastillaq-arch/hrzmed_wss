@@ -12,6 +12,15 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 
 const medicalUserSchema = new mongoose.Schema({
+  // ─── Multi-Tenant ──────────────────────────────────────────────────────────
+  organizationId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Organization',
+    default: null,
+    index: true,
+    description: 'Organization this user belongs to (multi-tenant)',
+  },
+
   // ─── Identification ────────────────────────────────────────────────────────
   userId: {
     type: String,
@@ -63,7 +72,7 @@ const medicalUserSchema = new mongoose.Schema({
   role: {
     type: String,
     required: true,
-    enum: ['doctor', 'nurse', 'admin', 'technician'],
+    enum: ['super_admin', 'clinic_admin', 'doctor', 'cardiologist', 'nurse', 'admin', 'technician', 'patient_b2c'],
     index: true,
   },
   specialty: {
@@ -118,6 +127,8 @@ const medicalUserSchema = new mongoose.Schema({
 medicalUserSchema.index({ lastName: 1, firstName: 1 });
 medicalUserSchema.index({ role: 1, active: 1 });
 medicalUserSchema.index({ institution: 1, department: 1 });
+medicalUserSchema.index({ organizationId: 1, role: 1, active: 1 });
+medicalUserSchema.index({ organizationId: 1, email: 1 });
 
 // ─── Static: hash password ───────────────────────────────────────────────────
 medicalUserSchema.statics.hashPassword = function (plaintext) {

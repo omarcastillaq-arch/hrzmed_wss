@@ -9,6 +9,14 @@
 const mongoose = require('mongoose');
 
 const notificationSchema = new mongoose.Schema({
+  // ─── Multi-Tenant ──────────────────────────────────────────────────────────
+  organizationId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Organization',
+    default: null,
+    index: true,
+  },
+
   notificationId: {
     type: String,
     required: true,

@@ -11,6 +11,15 @@
 const mongoose = require('mongoose');
 
 const patientSchema = new mongoose.Schema({
+  // ─── Multi-Tenant ──────────────────────────────────────────────────────────
+  organizationId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Organization',
+    default: null,
+    index: true,
+    description: 'Organization this patient belongs to (multi-tenant)',
+  },
+
   // ─── Identification ────────────────────────────────────────────────────────
   patientId: {
     type: String,
@@ -86,6 +95,8 @@ const patientSchema = new mongoose.Schema({
 // ─── Indexes ─────────────────────────────────────────────────────────────────
 patientSchema.index({ lastName: 1, firstName: 1 });
 patientSchema.index({ createdAt: -1 });
+patientSchema.index({ organizationId: 1, active: 1 });
+patientSchema.index({ organizationId: 1, lastName: 1, firstName: 1 });
 
 // ─── Instance Methods ────────────────────────────────────────────────────────
 patientSchema.methods.toSafeJSON = function () {

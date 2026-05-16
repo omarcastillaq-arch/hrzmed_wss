@@ -11,6 +11,14 @@
 const mongoose = require('mongoose');
 
 const deviceAssignmentSchema = new mongoose.Schema({
+  // ─── Multi-Tenant ──────────────────────────────────────────────────────────
+  organizationId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Organization',
+    default: null,
+    index: true,
+  },
+
   // ─── Identification ────────────────────────────────────────────────────────
   assignmentId: {
     type: String,

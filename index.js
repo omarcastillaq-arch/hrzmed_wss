@@ -55,6 +55,14 @@ const handleSwaggerRoutes = require('./src/routes/swaggerRoutes');
 const handleNotificationRoutes = require('./src/routes/notificationRoutes');
 const notificationService = require('./src/services/notification-service');
 
+// ─── SaaS Multi-Tenant Routes (Phase 19) ────────────────────────────────────
+const handleOrganizationRoutes = require('./src/routes/organizationRoutes');
+const handleSubscriptionRoutes = require('./src/routes/subscriptionRoutes');
+const handleCreditRoutes = require('./src/routes/creditRoutes');
+const handleBillingRoutes = require('./src/routes/billingRoutes');
+const handleInvitationRoutes = require('./src/routes/invitationRoutes');
+const handleRPMRoutes = require('./src/routes/rpmRoutes');
+
 // ─── Performance Modules (Phase 12) ─────────────────────────────────────────
 const redisCache = require('./src/services/redisCache');
 const mongoConfig = require('./src/config/mongodb');
@@ -147,6 +155,27 @@ const server = http.createServer(async (req, res) => {
   if (req.url.startsWith('/api/v1/notifications')) {
     const handled = await handleNotificationRoutes(req, res);
     if (handled !== null) return;
+  }
+
+  // ─── SaaS Multi-Tenant Routes (Phase 19) ────────────────────────────────
+  if (req.url.startsWith('/api/v1/organizations')) {
+    const handled = await handleOrganizationRoutes(req, res)
+      || await handleSubscriptionRoutes(req, res)
+      || await handleCreditRoutes(req, res)
+      || await handleBillingRoutes(req, res)
+      || await handleInvitationRoutes(req, res)
+      || await handleRPMRoutes(req, res);
+    if (handled !== null && handled !== undefined) return;
+  }
+
+  if (req.url.startsWith('/api/v1/plans')) {
+    const handled = await handleSubscriptionRoutes(req, res);
+    if (handled !== null && handled !== undefined) return;
+  }
+
+  if (req.url.startsWith('/api/v1/invitations')) {
+    const handled = await handleInvitationRoutes(req, res);
+    if (handled !== null && handled !== undefined) return;
   }
 
   // REST API routes for ECG data persistence
