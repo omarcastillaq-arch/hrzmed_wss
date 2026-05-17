@@ -23,6 +23,7 @@ const ECGSignal = require('../models/ECGSignal');
 const Patient = require('../models/Patient');
 const { decompress } = require('../services/signalCompressor');
 const { getActiveSessions } = require('../services/sessionManager');
+const redisCache = require('../services/redisCache');
 const logger = require('../utils/logger');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -161,6 +162,14 @@ async function handleListSessions(req, res, query) {
   const { page, limit, skip } = parsePagination(query);
   const sort = parseSort(query);
 
+  // Build cache key from query params
+  const cacheKey = `sessions:${JSON.stringify({ ...query, page, limit })}`;
+  const cached = await redisCache.getCachedQueryResult(cacheKey);
+  if (cached) {
+    sendJSON(res, 200, { ...cached, cached: true });
+    return true;
+  }
+
   // Build filter
   const filter = {};
   if (query.patientId) filter.patientId = query.patientId;
@@ -186,7 +195,7 @@ async function handleListSessions(req, res, query) {
     ECGSession.countDocuments(filter),
   ]);
 
-  sendJSON(res, 200, {
+  const result = {
     data: sessions,
     pagination: {
       page,
@@ -194,16 +203,33 @@ async function handleListSessions(req, res, query) {
       total,
       totalPages: Math.ceil(total / limit),
     },
-  });
+  };
+
+  // Cache the result
+  await redisCache.cacheQueryResult(cacheKey, result);
+
+  sendJSON(res, 200, result);
   return true;
 }
 
 async function handleGetSession(req, res, sessionId) {
+  // Check cache first
+  const cached = await redisCache.getCachedSession(sessionId);
+  if (cached) {
+    sendJSON(res, 200, { data: cached, cached: true });
+    return true;
+  }
+
   const session = await ECGSession.findOne({ sessionId }).lean();
   if (!session) {
     sendJSON(res, 404, { error: 'Session not found' });
     return true;
   }
+
+  // Cache completed sessions (longer TTL) vs active (shorter TTL)
+  const ttl = session.status === 'recording' ? 10 : redisCache.TTL.SESSION;
+  await redisCache.cacheSession(sessionId, session);
+
   sendJSON(res, 200, { data: session });
   return true;
 }
@@ -361,6 +387,13 @@ async function handleCreatePatient(req, res) {
 // ─── Stats Handler ───────────────────────────────────────────────────────────
 
 async function handleGetStats(req, res) {
+  // Check Redis cache first
+  const cached = await redisCache.getCachedStats();
+  if (cached) {
+    sendJSON(res, 200, { data: cached, cached: true });
+    return true;
+  }
+
   const [totalSessions, totalPatients, totalSignals, activeSessions] = await Promise.all([
     ECGSession.countDocuments(),
     Patient.countDocuments(),
@@ -382,6 +415,9 @@ async function handleGetStats(req, res) {
     averageDurationMs: durationAgg[0]?.avgDuration || 0,
     totalRecordingTimeMs: durationAgg[0]?.totalDuration || 0,
   };
+
+  // Cache stats result
+  await redisCache.cacheStats(stats);
 
   sendJSON(res, 200, { data: stats });
   return true;

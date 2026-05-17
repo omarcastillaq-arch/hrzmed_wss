@@ -30,6 +30,14 @@ const qualityMetricsSchema = new mongoose.Schema({
 // ─── Main Schema ─────────────────────────────────────────────────────────────
 
 const ecgSessionSchema = new mongoose.Schema({
+  // ─── Multi-Tenant ──────────────────────────────────────────────────────────
+  organizationId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Organization',
+    default: null,
+    index: true,
+  },
+
   // ─── Identification ──────────────────────────────────────────────────────
   sessionId: {
     type: String,

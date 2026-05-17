@@ -10,7 +10,17 @@
  *   - Structured security logging
  *   - Environment-based configuration (no hardcoded secrets)
  *
+ * Performance features (Phase 12):
+ *   - Redis caching for sessions, device status, and query results
+ *   - Optimized MongoDB connection pooling with retry logic
+ *   - WebSocket permessage-deflate compression (40-70% bandwidth reduction)
+ *   - Client health monitoring (ping/pong for stale connection cleanup)
+ *   - Backpressure management for high-concurrency scenarios
+ *   - Batched broadcast for multi-client ECG data distribution
+ *   - Multi-process cluster support for horizontal scaling
+ *
  * @see SECURITY.md for full security documentation
+ * @see PERFORMANCE.md for performance optimization documentation
  */
 
 'use strict';
@@ -18,9 +28,15 @@
 // Load environment variables from .env file (development only)
 require('dotenv').config();
 
+// ─── Cluster Mode (must be first) ───────────────────────────────────────────
+const { initCluster, isPrimary } = require('./src/services/clusterManager');
+if (initCluster()) {
+  // This is the primary process in cluster mode — workers will run the server
+  return;
+}
+
 const http = require('http');
 const WebSocket = require('ws');
-const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 
 const logger = require('./src/utils/logger');
@@ -32,6 +48,31 @@ const { handleRequest: handleAPIRequest } = require('./src/routes/ecgRoutes');
 const metricsCollector = require('./src/services/metricsCollector');
 const alertManager = require('./src/services/alertManager');
 const { handleRequest: handleMonitoringRequest } = require('./src/routes/monitoringRoutes');
+const handleMedicalUserRoutes = require('./src/routes/medicalUserRoutes');
+const handleDeviceAssignmentRoutes = require('./src/routes/deviceAssignmentRoutes');
+const handleReportRoutes = require('./src/routes/reportRoutes');
+const handleSwaggerRoutes = require('./src/routes/swaggerRoutes');
+const handleNotificationRoutes = require('./src/routes/notificationRoutes');
+const notificationService = require('./src/services/notification-service');
+
+// ─── SaaS Multi-Tenant Routes (Phase 19) ────────────────────────────────────
+const handleOrganizationRoutes = require('./src/routes/organizationRoutes');
+const handleSubscriptionRoutes = require('./src/routes/subscriptionRoutes');
+const handleCreditRoutes = require('./src/routes/creditRoutes');
+const handleBillingRoutes = require('./src/routes/billingRoutes');
+const handleInvitationRoutes = require('./src/routes/invitationRoutes');
+const handleRPMRoutes = require('./src/routes/rpmRoutes');
+
+// ─── Performance Modules (Phase 12) ─────────────────────────────────────────
+const redisCache = require('./src/services/redisCache');
+const mongoConfig = require('./src/config/mongodb');
+const {
+  getServerOptions,
+  ClientHealthMonitor,
+  BackpressureManager,
+  BatchedBroadcaster,
+  ConnectionPool,
+} = require('./src/services/wsOptimizer');
 
 // ─── Configuration from Environment ──────────────────────────────────────────
 
@@ -49,29 +90,29 @@ const rateLimiter = new RateLimiter({
   banDurationMs: parseInt(process.env.BAN_DURATION_MS, 10) || 15 * 60 * 1000,
 });
 
-// ─── MongoDB Connection ──────────────────────────────────────────────────────
+// ─── Redis Cache Initialization ──────────────────────────────────────────────
 
-mongoose.connect(MONGO_URI)
-  .then(() => logger.info('Connected to MongoDB', { uri: MONGO_URI.replace(/\/\/[^@]+@/, '//***:***@') }))
+redisCache.init();
+
+// ─── MongoDB Connection (Optimized) ──────────────────────────────────────────
+
+mongoConfig.connect(MONGO_URI)
+  .then(async () => {
+    // Ensure indexes are created after connection
+    await mongoConfig.ensureIndexes();
+    logger.info('MongoDB connected with optimized pool', mongoConfig.getPoolStats());
+  })
   .catch(err => {
     logger.error('MongoDB connection error', { error: err.message });
     process.exit(1);
   });
-
-mongoose.connection.on('error', err => {
-  logger.error('MongoDB runtime error', { error: err.message });
-});
-
-mongoose.connection.on('disconnected', () => {
-  logger.warn('MongoDB disconnected, attempting reconnection...');
-});
 
 // ─── HTTP Server + WebSocket Server ──────────────────────────────────────────
 
 const server = http.createServer(async (req, res) => {
   // CORS headers for API routes
   res.setHeader('Access-Control-Allow-Origin', process.env.CORS_ORIGIN || '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
@@ -86,6 +127,57 @@ const server = http.createServer(async (req, res) => {
     if (handled) return;
   }
 
+  // Swagger / API docs
+  if (req.url.startsWith('/api/docs')) {
+    const handled = handleSwaggerRoutes(req, res);
+    if (handled) return;
+  }
+
+  // Medical user routes
+  if (req.url.startsWith('/api/v1/users')) {
+    const handled = await handleMedicalUserRoutes(req, res);
+    if (handled !== null) return;
+  }
+
+  // Device assignment routes
+  if (req.url.startsWith('/api/v1/assignments') || req.url.match(/\/api\/v1\/(devices|patients)\/[^/]+\/assignments/)) {
+    const handled = await handleDeviceAssignmentRoutes(req, res);
+    if (handled !== null) return;
+  }
+
+  // Report and export routes
+  if (req.url.startsWith('/api/v1/reports') || req.url.startsWith('/api/v1/export')) {
+    const handled = await handleReportRoutes(req, res);
+    if (handled !== null) return;
+  }
+
+  // Notification routes (Phase 16)
+  if (req.url.startsWith('/api/v1/notifications')) {
+    const handled = await handleNotificationRoutes(req, res);
+    if (handled !== null) return;
+  }
+
+  // ─── SaaS Multi-Tenant Routes (Phase 19) ────────────────────────────────
+  if (req.url.startsWith('/api/v1/organizations')) {
+    const handled = await handleOrganizationRoutes(req, res)
+      || await handleSubscriptionRoutes(req, res)
+      || await handleCreditRoutes(req, res)
+      || await handleBillingRoutes(req, res)
+      || await handleInvitationRoutes(req, res)
+      || await handleRPMRoutes(req, res);
+    if (handled !== null && handled !== undefined) return;
+  }
+
+  if (req.url.startsWith('/api/v1/plans')) {
+    const handled = await handleSubscriptionRoutes(req, res);
+    if (handled !== null && handled !== undefined) return;
+  }
+
+  if (req.url.startsWith('/api/v1/invitations')) {
+    const handled = await handleInvitationRoutes(req, res);
+    if (handled !== null && handled !== undefined) return;
+  }
+
   // REST API routes for ECG data persistence
   if (req.url.startsWith('/api/')) {
     const handled = await handleAPIRequest(req, res);
@@ -96,7 +188,14 @@ const server = http.createServer(async (req, res) => {
   res.end();
 });
 
-const wss = new WebSocket.Server({ noServer: true });
+const wsOptions = getServerOptions();
+const wss = new WebSocket.Server(wsOptions);
+
+// ─── Performance: Connection Pool, Health Monitor, Broadcaster ───────────────
+
+const connectionPool = new ConnectionPool();
+const healthMonitor = new ClientHealthMonitor(wss);
+const broadcaster = new BatchedBroadcaster(wss);
 
 // ─── Connection Upgrade Handler (Authentication) ─────────────────────────────
 
@@ -164,6 +263,13 @@ wss.on('connection', (ws, request) => {
   ws._connectedAt = Date.now();
   ws._messageCount = 0;
 
+  // Register with performance monitors
+  connectionPool.add(ws);
+  healthMonitor.registerClient(ws);
+  if (user.deviceId) {
+    connectionPool.associateDevice(connectionId, user.deviceId);
+  }
+
   logger.info('Client connected', {
     connectionId,
     ip: clientIP,
@@ -171,6 +277,7 @@ wss.on('connection', (ws, request) => {
     role: user.role,
     deviceId: user.deviceId,
     totalClients: wss.clients.size,
+    compression: wsOptions.perMessageDeflate ? 'enabled' : 'disabled',
   });
 
   // ── Message Handler ──────────────────────────────────────────────────────
@@ -273,6 +380,7 @@ wss.on('connection', (ws, request) => {
   ws.on('close', async (code, reason) => {
     rateLimiter.removeConnection(clientIP);
     rateLimiter.removeMessageTracking(connectionId);
+    connectionPool.remove(connectionId);
     metricsCollector.recordDisconnection(user.role || 'unknown');
 
     // Close all ECG recording sessions for this connection
@@ -286,6 +394,16 @@ wss.on('connection', (ws, request) => {
     }
 
     const sessionDuration = Math.round((Date.now() - ws._connectedAt) / 1000);
+
+    // ── Phase 16: Device disconnection notification ──
+    if (user.deviceId && user.role === 'device') {
+      notificationService.detectDeviceDisconnection({
+        deviceId: user.deviceId,
+        patientId: user.patientId || null,
+        connectionId,
+        reason: reason ? reason.toString() : `code ${code}`,
+      }).catch(err => logger.error('Disconnect notification error', { error: err.message }));
+    }
 
     logger.info('Client disconnected', {
       connectionId,
@@ -334,21 +452,19 @@ async function handleECGData(ws, data) {
       patientId: ws._user?.patientId || null,
     });
 
-    // Broadcast validated ECG data to other connected clients (monitoring dashboards)
-    wss.clients.forEach((client) => {
-      if (client !== ws && client.readyState === WebSocket.OPEN) {
-        // Only send to clients that have a role of 'monitor' or 'admin'
-        if (client._user && ['monitor', 'admin', 'anonymous'].includes(client._user.role)) {
-          client.send(JSON.stringify({
-            type: 'ecg_data',
-            deviceId: data.deviceId,
-            channelId: data.channelId,
-            samples: data.samples,
-            timestamp: data.timestamp,
-            sequenceNumber: data.sequenceNumber,
-          }));
-        }
-      }
+    // Broadcast validated ECG data using batched broadcaster with backpressure
+    broadcaster.enqueue({
+      type: 'ecg_data',
+      deviceId: data.deviceId,
+      channelId: data.channelId,
+      samples: data.samples,
+      timestamp: data.timestamp,
+      sequenceNumber: data.sequenceNumber,
+    }, (client) => {
+      // Only send to monitoring/admin clients, not the sender
+      return client !== ws &&
+        client._user &&
+        ['monitor', 'admin', 'anonymous'].includes(client._user.role);
     });
 
     // Acknowledge receipt with session info
@@ -387,7 +503,38 @@ async function handleECGData(ws, data) {
   }
 }
 
-function handleDeviceStatus(ws, data) {
+async function handleDeviceStatus(ws, data) {
+  // Cache device status in Redis for fast lookup
+  await redisCache.cacheDeviceStatus(data.deviceId, {
+    deviceId: data.deviceId,
+    status: data.status,
+    batteryLevel: data.batteryLevel,
+    connectionId: ws._connectionId,
+    lastSeen: Date.now(),
+  });
+
+  // Associate device with connection for efficient routing
+  connectionPool.associateDevice(ws._connectionId, data.deviceId);
+
+  // ── Phase 16: Battery low detection ──
+  if (data.batteryLevel !== undefined && data.batteryLevel < 20) {
+    notificationService.detectBatteryLow({
+      deviceId: data.deviceId,
+      batteryLevel: data.batteryLevel,
+      patientId: ws._user?.patientId || null,
+    }).catch(err => logger.error('Battery notification error', { error: err.message }));
+  }
+
+  // ── Phase 16: Signal quality detection ──
+  if (data.snrDb !== undefined) {
+    notificationService.detectSignalQualityDegraded({
+      deviceId: data.deviceId,
+      patientId: ws._user?.patientId || null,
+      snrDb: data.snrDb,
+      qualityScore: data.qualityScore,
+    }).catch(err => logger.error('Signal quality notification error', { error: err.message }));
+  }
+
   logger.info('Device status update', {
     deviceId: data.deviceId,
     status: data.status,
@@ -417,8 +564,17 @@ function handlePatientInfo(ws, data) {
 // ─── Start Server ────────────────────────────────────────────────────────────
 
 server.listen(PORT, () => {
+  const mongoose = require('mongoose');
+
   // Start metrics collection
   metricsCollector.start();
+
+  // Start client health monitoring (ping/pong for stale connections)
+  healthMonitor.start();
+
+  // Start notification service (Phase 16)
+  notificationService.setWebSocketServer(wss);
+  notificationService.start();
 
   // Periodic alert evaluation (every 30s)
   setInterval(() => {
@@ -431,6 +587,10 @@ server.listen(PORT, () => {
     environment: NODE_ENV,
     authEnabled: AUTH_ENABLED,
     mongoUri: MONGO_URI.replace(/\/\/[^@]+@/, '//***:***@'),
+    mongoPool: mongoConfig.getPoolStats(),
+    wsCompression: wsOptions.perMessageDeflate ? 'permessage-deflate' : 'disabled',
+    redis: redisCache._isConnected() ? 'connected' : 'disconnected/disabled',
+    pid: process.pid,
     monitoring: { dashboard: '/monitoring', health: '/health', detailed: '/health/detailed' },
   });
 });
@@ -456,6 +616,16 @@ function gracefulShutdown(signal) {
     logger.info('HTTP server closed');
   });
 
+  // Stop performance monitors
+  healthMonitor.stop();
+  broadcaster.destroy();
+  connectionPool.clear();
+  logger.info('Performance monitors stopped');
+
+  // Stop notification service (Phase 16)
+  notificationService.stop();
+  logger.info('Notification service stopped');
+
   // Stop metrics collection
   metricsCollector.stop();
   logger.info('MetricsCollector stopped');
@@ -464,8 +634,13 @@ function gracefulShutdown(signal) {
   sessionManager.destroy();
   logger.info('SessionManager destroyed');
 
+  // Close Redis connection
+  redisCache.shutdown().then(() => {
+    logger.info('Redis connection closed');
+  }).catch(() => {});
+
   // Close MongoDB connection
-  mongoose.connection.close(false).then(() => {
+  mongoConfig.shutdown().then(() => {
     logger.info('MongoDB connection closed');
     rateLimiter.destroy();
     process.exit(0);
